@@ -242,7 +242,8 @@ function run() {
 			}
 
 			var firstOptions = [].concat(options)[0];
-			var statsPresetToOptions = require("webpack/lib/Stats.js").presetToOptions;
+			var statsPresetToOptions = require("webpack/lib/Stats.js")
+				.presetToOptions;
 
 			var outputOptions = options.stats;
 			if (
@@ -428,7 +429,10 @@ function run() {
 			}
 			if (firstOptions.watch || options.watch) {
 				var watchOptions =
-					firstOptions.watchOptions || firstOptions.watch || options.watch || {};
+					firstOptions.watchOptions ||
+					firstOptions.watch ||
+					options.watch ||
+					{};
 				if (watchOptions.stdin) {
 					process.stdin.on("end", function() {
 						process.exit(); // eslint-disable-line
@@ -445,8 +449,12 @@ function run() {
 }
 
 function bail() {
-	console.error("No configuration file found and no output filename configured via CLI option.");
-	console.error("A configuration file could be named 'webpack.config.js' in the current directory.");
+	console.error(
+		"No configuration file found and no output filename configured via CLI option."
+	);
+	console.error(
+		"A configuration file could be named 'webpack.config.js' in the current directory."
+	);
 	console.error("");
 	yargs.showHelp();
 	process.exit(-1);
