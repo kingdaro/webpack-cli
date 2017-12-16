@@ -548,15 +548,6 @@ module.exports = function(yargs, argv, convertOptions) {
 				throw new Error(
 					"'output.filename' is required, either in config file or as --output-filename"
 				);
-			} else {
-				console.error(
-					"No configuration file found and no output filename configured via CLI option."
-				);
-				console.error(
-					"A configuration file could be named 'webpack.config.js' in the current directory."
-				);
-				console.error("Use --help to display the CLI options.");
-				process.exit(-1); // eslint-disable-line
 			}
 		}
 
