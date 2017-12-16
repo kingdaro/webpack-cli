@@ -3,6 +3,7 @@ var fs = require("fs");
 fs.existsSync = fs.existsSync || path.existsSync;
 var interpret = require("interpret");
 var prepareOptions = require("./prepareOptions");
+var findDefaultConfigFiles = require("../lib/utils/find-default-config-files");
 
 module.exports = function(yargs, argv, convertOptions) {
 	var options = [];
@@ -30,21 +31,6 @@ module.exports = function(yargs, argv, convertOptions) {
 
 	var configFileLoaded = false;
 	var configFiles = [];
-	var extensions = Object.keys(interpret.extensions).sort(function(a, b) {
-		return a === ".js" ? -1 : b === ".js" ? 1 : a.length - b.length;
-	});
-	var defaultConfigFiles = ["webpack.config", "webpackfile"]
-		.map(function(filename) {
-			return extensions.map(function(ext) {
-				return {
-					path: path.resolve(filename + ext),
-					ext: ext
-				};
-			});
-		})
-		.reduce(function(a, i) {
-			return a.concat(i);
-		}, []);
 
 	var i;
 	if (argv.config) {
@@ -74,16 +60,7 @@ module.exports = function(yargs, argv, convertOptions) {
 			: [argv.config];
 		configFiles = configArgList.map(mapConfigArg);
 	} else {
-		for (i = 0; i < defaultConfigFiles.length; i++) {
-			var webpackConfig = defaultConfigFiles[i].path;
-			if (fs.existsSync(webpackConfig)) {
-				configFiles.push({
-					path: webpackConfig,
-					ext: defaultConfigFiles[i].ext
-				});
-				break;
-			}
-		}
+		configFiles = findDefaultConfigFiles();
 	}
 
 	if (configFiles.length > 0) {
