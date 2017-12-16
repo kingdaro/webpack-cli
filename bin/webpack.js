@@ -9,6 +9,7 @@ var resolveCwd = require("resolve-cwd");
 // Local version replace global one
 var localCLI = resolveCwd.silent("webpack-cli/bin/webpack");
 var ErrorHelpers = require("webpack/lib/ErrorHelpers");
+var findDefaultConfigFiles = require("../lib/utils/find-default-config-files");
 
 const NON_COMPILATION_ARGS = [
 	"init",
@@ -176,267 +177,287 @@ yargs.options({
 	}
 });
 
-// yargs will terminate the process early when the user uses help or version.
-// This causes large help outputs to be cut short (https://github.com/nodejs/node/wiki/API-changes-between-v0.10-and-v4#process).
-// To prevent this we use the yargs.parse API and exit the process normally
-yargs.parse(process.argv.slice(2), (err, argv, output) => {
-	Error.stackTraceLimit = 30;
+function run() {
+	// yargs will terminate the process early when the user uses help or version.
+	// This causes large help outputs to be cut short (https://github.com/nodejs/node/wiki/API-changes-between-v0.10-and-v4#process).
+	// To prevent this we use the yargs.parse API and exit the process normally
+	yargs.parse(process.argv.slice(2), (err, argv, output) => {
+		Error.stackTraceLimit = 30;
 
-	// arguments validation failed
-	if (err && output) {
-		console.error(output);
-		process.exitCode = 1;
-		return;
-	}
-
-	// help or version info
-	if (output) {
-		console.log(output);
-		return;
-	}
-
-	if (argv.verbose) {
-		argv["display"] = "verbose";
-	}
-
-	try {
-		var options = require("./convert-argv")(yargs, argv);
-	} catch (err) {
-		if (err.name !== "ValidationError") {
-			throw err;
-		}
-
-		var stack = ErrorHelpers.cleanUpWebpackOptions(err.stack, err.message);
-		var message = err.message + "\n" + stack;
-
-		if (argv.color) {
-			console.error(`\u001b[1m\u001b[31m${message}\u001b[39m\u001b[22m`);
-		} else {
-			console.error(message);
-		}
-
-		process.exitCode = 1;
-		return;
-	}
-
-	function ifArg(name, fn, init) {
-		if (Array.isArray(argv[name])) {
-			if (init) init();
-			argv[name].forEach(fn);
-		} else if (typeof argv[name] !== "undefined") {
-			if (init) init();
-			fn(argv[name], -1);
-		}
-	}
-
-	function processOptions(options) {
-		// process Promise
-		if (typeof options.then === "function") {
-			options.then(processOptions).catch(function(err) {
-				console.error(err.stack || err);
-				process.exit(1); // eslint-disable-line
-			});
+		// arguments validation failed
+		if (err && output) {
+			console.error(output);
+			process.exitCode = 1;
 			return;
 		}
 
-		var firstOptions = [].concat(options)[0];
-		var statsPresetToOptions = require("webpack/lib/Stats.js").presetToOptions;
-
-		var outputOptions = options.stats;
-		if (
-			typeof outputOptions === "boolean" ||
-			typeof outputOptions === "string"
-		) {
-			outputOptions = statsPresetToOptions(outputOptions);
-		} else if (!outputOptions) {
-			outputOptions = {};
+		// help or version info
+		if (output) {
+			console.log(output);
+			return;
 		}
 
-		ifArg("display", function(preset) {
-			outputOptions = statsPresetToOptions(preset);
-		});
-
-		outputOptions = Object.create(outputOptions);
-		if (Array.isArray(options) && !outputOptions.children) {
-			outputOptions.children = options.map(o => o.stats);
+		if (argv.verbose) {
+			argv["display"] = "verbose";
 		}
-		if (typeof outputOptions.context === "undefined")
-			outputOptions.context = firstOptions.context;
 
-		ifArg("env", function(value) {
-			if (outputOptions.env) {
-				outputOptions._env = value;
+		try {
+			var options = require("./convert-argv")(yargs, argv);
+		} catch (err) {
+			if (err.name !== "ValidationError") {
+				throw err;
 			}
-		});
 
-		ifArg("json", function(bool) {
-			if (bool) outputOptions.json = bool;
-		});
+			var stack = ErrorHelpers.cleanUpWebpackOptions(err.stack, err.message);
+			var message = err.message + "\n" + stack;
 
-		if (typeof outputOptions.colors === "undefined")
-			outputOptions.colors = require("supports-color");
+			if (argv.color) {
+				console.error(`\u001b[1m\u001b[31m${message}\u001b[39m\u001b[22m`);
+			} else {
+				console.error(message);
+			}
 
-		ifArg("sort-modules-by", function(value) {
-			outputOptions.modulesSort = value;
-		});
+			process.exitCode = 1;
+			return;
+		}
 
-		ifArg("sort-chunks-by", function(value) {
-			outputOptions.chunksSort = value;
-		});
+		function ifArg(name, fn, init) {
+			if (Array.isArray(argv[name])) {
+				if (init) init();
+				argv[name].forEach(fn);
+			} else if (typeof argv[name] !== "undefined") {
+				if (init) init();
+				fn(argv[name], -1);
+			}
+		}
 
-		ifArg("sort-assets-by", function(value) {
-			outputOptions.assetsSort = value;
-		});
+		function processOptions(options) {
+			// process Promise
+			if (typeof options.then === "function") {
+				options.then(processOptions).catch(function(err) {
+					console.error(err.stack || err);
+					process.exit(1); // eslint-disable-line
+				});
+				return;
+			}
 
-		ifArg("display-exclude", function(value) {
-			outputOptions.exclude = value;
-		});
+			var firstOptions = [].concat(options)[0];
+			var statsPresetToOptions = require("webpack/lib/Stats.js").presetToOptions;
 
-		if (!outputOptions.json) {
-			if (typeof outputOptions.cached === "undefined")
-				outputOptions.cached = false;
-			if (typeof outputOptions.cachedAssets === "undefined")
-				outputOptions.cachedAssets = false;
+			var outputOptions = options.stats;
+			if (
+				typeof outputOptions === "boolean" ||
+				typeof outputOptions === "string"
+			) {
+				outputOptions = statsPresetToOptions(outputOptions);
+			} else if (!outputOptions) {
+				outputOptions = {};
+			}
 
-			ifArg("display-chunks", function(bool) {
-				if (bool) {
-					outputOptions.modules = false;
-					outputOptions.chunks = true;
-					outputOptions.chunkModules = true;
+			ifArg("display", function(preset) {
+				outputOptions = statsPresetToOptions(preset);
+			});
+
+			outputOptions = Object.create(outputOptions);
+			if (Array.isArray(options) && !outputOptions.children) {
+				outputOptions.children = options.map(o => o.stats);
+			}
+			if (typeof outputOptions.context === "undefined")
+				outputOptions.context = firstOptions.context;
+
+			ifArg("env", function(value) {
+				if (outputOptions.env) {
+					outputOptions._env = value;
 				}
 			});
 
-			ifArg("display-entrypoints", function(bool) {
-				if (bool) outputOptions.entrypoints = true;
+			ifArg("json", function(bool) {
+				if (bool) outputOptions.json = bool;
 			});
 
-			ifArg("display-reasons", function(bool) {
-				if (bool) outputOptions.reasons = true;
+			if (typeof outputOptions.colors === "undefined")
+				outputOptions.colors = require("supports-color");
+
+			ifArg("sort-modules-by", function(value) {
+				outputOptions.modulesSort = value;
 			});
 
-			ifArg("display-depth", function(bool) {
-				if (bool) outputOptions.depth = true;
+			ifArg("sort-chunks-by", function(value) {
+				outputOptions.chunksSort = value;
 			});
 
-			ifArg("display-used-exports", function(bool) {
-				if (bool) outputOptions.usedExports = true;
+			ifArg("sort-assets-by", function(value) {
+				outputOptions.assetsSort = value;
 			});
 
-			ifArg("display-provided-exports", function(bool) {
-				if (bool) outputOptions.providedExports = true;
+			ifArg("display-exclude", function(value) {
+				outputOptions.exclude = value;
 			});
 
-			ifArg("display-optimization-bailout", function(bool) {
-				if (bool) outputOptions.optimizationBailout = bool;
-			});
+			if (!outputOptions.json) {
+				if (typeof outputOptions.cached === "undefined")
+					outputOptions.cached = false;
+				if (typeof outputOptions.cachedAssets === "undefined")
+					outputOptions.cachedAssets = false;
 
-			ifArg("display-error-details", function(bool) {
-				if (bool) outputOptions.errorDetails = true;
-			});
-
-			ifArg("display-origins", function(bool) {
-				if (bool) outputOptions.chunkOrigins = true;
-			});
-
-			ifArg("display-max-modules", function(value) {
-				outputOptions.maxModules = +value;
-			});
-
-			ifArg("display-cached", function(bool) {
-				if (bool) outputOptions.cached = true;
-			});
-
-			ifArg("display-cached-assets", function(bool) {
-				if (bool) outputOptions.cachedAssets = true;
-			});
-
-			if (!outputOptions.exclude)
-				outputOptions.exclude = [
-					"node_modules",
-					"bower_components",
-					"components"
-				];
-
-			if (argv["display-modules"]) {
-				outputOptions.maxModules = Infinity;
-				outputOptions.exclude = undefined;
-				outputOptions.modules = true;
-			}
-		}
-
-		ifArg("hide-modules", function(bool) {
-			if (bool) {
-				outputOptions.modules = false;
-				outputOptions.chunkModules = false;
-			}
-		});
-
-		var webpack = require("webpack/lib/webpack.js");
-
-		var lastHash = null;
-		var compiler;
-		try {
-			compiler = webpack(options);
-		} catch (err) {
-			if (err.name === "WebpackOptionsValidationError") {
-				if (argv.color)
-					console.error(
-						`\u001b[1m\u001b[31m${err.message}\u001b[39m\u001b[22m`
-					);
-				else console.error(err.message);
-				// eslint-disable-next-line no-process-exit
-				process.exit(1);
-			}
-
-			throw err;
-		}
-
-		if (argv.progress) {
-			var ProgressPlugin = require("webpack/lib/ProgressPlugin");
-			compiler.apply(
-				new ProgressPlugin({
-					profile: argv.profile
-				})
-			);
-		}
-
-		function compilerCallback(err, stats) {
-			if (!options.watch || err) {
-				// Do not keep cache anymore
-				compiler.purgeInputFileSystem();
-			}
-			if (err) {
-				lastHash = null;
-				console.error(err.stack || err);
-				if (err.details) console.error(err.details);
-				process.exit(1); // eslint-disable-line
-			}
-			if (outputOptions.json) {
-				process.stdout.write(
-					JSON.stringify(stats.toJson(outputOptions), null, 2) + "\n"
-				);
-			} else if (stats.hash !== lastHash) {
-				lastHash = stats.hash;
-				var statsString = stats.toString(outputOptions);
-				if (statsString) process.stdout.write(statsString + "\n");
-			}
-			if (!options.watch && stats.hasErrors()) {
-				process.exitCode = 2;
-			}
-		}
-		if (firstOptions.watch || options.watch) {
-			var watchOptions =
-				firstOptions.watchOptions || firstOptions.watch || options.watch || {};
-			if (watchOptions.stdin) {
-				process.stdin.on("end", function() {
-					process.exit(); // eslint-disable-line
+				ifArg("display-chunks", function(bool) {
+					if (bool) {
+						outputOptions.modules = false;
+						outputOptions.chunks = true;
+						outputOptions.chunkModules = true;
+					}
 				});
-				process.stdin.resume();
-			}
-			compiler.watch(watchOptions, compilerCallback);
-			console.log("\nWebpack is watching the files…\n");
-		} else compiler.run(compilerCallback);
-	}
 
-	processOptions(options);
-});
+				ifArg("display-entrypoints", function(bool) {
+					if (bool) outputOptions.entrypoints = true;
+				});
+
+				ifArg("display-reasons", function(bool) {
+					if (bool) outputOptions.reasons = true;
+				});
+
+				ifArg("display-depth", function(bool) {
+					if (bool) outputOptions.depth = true;
+				});
+
+				ifArg("display-used-exports", function(bool) {
+					if (bool) outputOptions.usedExports = true;
+				});
+
+				ifArg("display-provided-exports", function(bool) {
+					if (bool) outputOptions.providedExports = true;
+				});
+
+				ifArg("display-optimization-bailout", function(bool) {
+					if (bool) outputOptions.optimizationBailout = bool;
+				});
+
+				ifArg("display-error-details", function(bool) {
+					if (bool) outputOptions.errorDetails = true;
+				});
+
+				ifArg("display-origins", function(bool) {
+					if (bool) outputOptions.chunkOrigins = true;
+				});
+
+				ifArg("display-max-modules", function(value) {
+					outputOptions.maxModules = +value;
+				});
+
+				ifArg("display-cached", function(bool) {
+					if (bool) outputOptions.cached = true;
+				});
+
+				ifArg("display-cached-assets", function(bool) {
+					if (bool) outputOptions.cachedAssets = true;
+				});
+
+				if (!outputOptions.exclude)
+					outputOptions.exclude = [
+						"node_modules",
+						"bower_components",
+						"components"
+					];
+
+				if (argv["display-modules"]) {
+					outputOptions.maxModules = Infinity;
+					outputOptions.exclude = undefined;
+					outputOptions.modules = true;
+				}
+			}
+
+			ifArg("hide-modules", function(bool) {
+				if (bool) {
+					outputOptions.modules = false;
+					outputOptions.chunkModules = false;
+				}
+			});
+
+			var webpack = require("webpack/lib/webpack.js");
+
+			var lastHash = null;
+			var compiler;
+			try {
+				compiler = webpack(options);
+			} catch (err) {
+				if (err.name === "WebpackOptionsValidationError") {
+					if (argv.color)
+						console.error(
+							`\u001b[1m\u001b[31m${err.message}\u001b[39m\u001b[22m`
+						);
+					else console.error(err.message);
+					// eslint-disable-next-line no-process-exit
+					process.exit(1);
+				}
+
+				throw err;
+			}
+
+			if (argv.progress) {
+				var ProgressPlugin = require("webpack/lib/ProgressPlugin");
+				compiler.apply(
+					new ProgressPlugin({
+						profile: argv.profile
+					})
+				);
+			}
+
+			function compilerCallback(err, stats) {
+				if (!options.watch || err) {
+					// Do not keep cache anymore
+					compiler.purgeInputFileSystem();
+				}
+				if (err) {
+					lastHash = null;
+					console.error(err.stack || err);
+					if (err.details) console.error(err.details);
+					process.exit(1); // eslint-disable-line
+				}
+				if (outputOptions.json) {
+					process.stdout.write(
+						JSON.stringify(stats.toJson(outputOptions), null, 2) + "\n"
+					);
+				} else if (stats.hash !== lastHash) {
+					lastHash = stats.hash;
+					var statsString = stats.toString(outputOptions);
+					if (statsString) process.stdout.write(statsString + "\n");
+				}
+				if (!options.watch && stats.hasErrors()) {
+					process.exitCode = 2;
+				}
+			}
+			if (firstOptions.watch || options.watch) {
+				var watchOptions =
+					firstOptions.watchOptions || firstOptions.watch || options.watch || {};
+				if (watchOptions.stdin) {
+					process.stdin.on("end", function() {
+						process.exit(); // eslint-disable-line
+					});
+					process.stdin.resume();
+				}
+				compiler.watch(watchOptions, compilerCallback);
+				console.log("\nWebpack is watching the files…\n");
+			} else compiler.run(compilerCallback);
+		}
+
+		processOptions(options);
+	});
+}
+
+function bail() {
+	console.error("No configuration file found and no output filename configured via CLI option.");
+	console.error("A configuration file could be named 'webpack.config.js' in the current directory.");
+	console.error("");
+	yargs.showHelp();
+	process.exit(-1);
+}
+
+const args = process.argv.slice(2);
+if (args.length < 1) {
+	const configFiles = findDefaultConfigFiles();
+	if (configFiles.length === 0) {
+		bail();
+	}
+}
+
+run();
